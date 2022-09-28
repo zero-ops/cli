@@ -1,0 +1,72 @@
+name: build-gh
+
+on:
+  push:
+    branches:
+      - "publish"
+permissions:
+  contents: write
+
+jobs:
+  build:
+
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: false
+          ssh-key: ${{ secrets.GIT_RUNNER_SSH }}
+
+      - name: run make
+        run: make
+
+      - name: export version
+        run: |
+          version$(./bin/gh --version | head -n 1 | cut -d' ' -f3)
+          md5sum=$(md5sum --text ./bin/gh | cut -d' ' -f1)
+          echo "::set-output name=version::$version"
+          echo "::set-output name=md5sum::$md5sum"
+
+  rads:
+
+    runs-on: self-hosted
+    needs:
+      - build
+    steps:
+      - name: push to rads
+        run: scp bin/gh root@git.reverseads.io:/usr/bin/gh
+
+      - name: test install
+        run: |
+          version=$(ssh ubuntu@git.reverseads.io gh --version | head -n 1 | cut -d' ' -f3))
+          md5sum=$(ssh ubuntu@git.reverseads.io md5sum /usr/bin/gh | cut -d' ' -f1))
+          if [ ${{ steps.tests.outputs.md5sum }} == $md5sum ]; then
+            echo "$version installed properly"
+            return 0
+          else 
+            echo "::error file=gh::Checksum missmatch"
+            echo "expected ${{ steps.tests.outputs.md5sum }} got $md5sum"
+            return 1
+          fi
+
+  ha:
+
+    runs-on: self-hosted
+    needs:
+      - build
+    steps:
+      - name: push to rads
+        run: scp bin/gh root@git.hiacuity.com:/usr/bin/gh
+      - name: test install
+        run: |
+          version=$(ssh ubuntu@git.hiacuity.com gh --version | head -n 1 | cut -d' ' -f3))
+          md5sum=$(ssh ubuntu@git.hiacuity.com md5sum /usr/bin/gh | cut -d' ' -f1))
+          if [ ${{ steps.tests.outputs.md5sum }} == $md5sum ]; then
+            echo "$version installed properly"
+            return 0
+          else 
+            echo "::error file=gh::Checksum missmatch"
+            echo "expected ${{ steps.tests.outputs.md5sum }} got $md5sum"
+            return 1
+          fi
